@@ -1,6 +1,6 @@
 library(tidyverse)
 
-LECDK19 <- load(url(URLencode("https://github.com/oliversandqvist/EHADelayAdjudication/Data application/raw/main/LECDK19.Rdata")))
+LECDK19 <- load(url(URLencode("https://github.com/oliversandqvist/MultistateDelayAdjudication/Data application/raw/main/LECDK19.Rdata")))
 
 date <- as.POSIXct("2019-07-31 23:59:59 UTC", tz="UTC")
 studyStart <- "2015-01-31" 
