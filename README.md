@@ -1,4 +1,4 @@
-# DisabilityReserving: Reserving for disability insurance with reporting delays and incomplete event adjudication
+# Web appendix
 
 ## Introduction
 This repository contains code and output to reproduce results in the paper [A multistate approach to disability insurance
