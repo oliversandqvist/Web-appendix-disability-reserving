@@ -1,6 +1,8 @@
 library(tidyverse)
 
-LECDK19 <- load(url(URLencode("https://github.com/oliversandqvist/MultistateDelayAdjudication/Data application/raw/main/LECDK19.Rdata")))
+download.file("https://github.com/oliversandqvist/Web-appendix-estimation-contamination/raw/main/Data%20application/LECDK19.RData", destfile = "LECDK19.RData", mode = "wb")
+LECDK19 <- readRDS(gzfile("LECDK19.RData"))
+unlink("LECDK19.RData")
 
 date <- as.POSIXct("2019-07-31 23:59:59 UTC", tz="UTC")
 studyStart <- "2015-01-31" 
