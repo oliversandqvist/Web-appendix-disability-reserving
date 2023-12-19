@@ -30,10 +30,12 @@ delayCoef <- c(2.2253524712,1.0531730783,0.3556644822,0.1132067522,0.0008557776)
 I <- function(s,t,gender,age){
   1-(1-exp(-(delayCoef[1]*(t-s))^delayCoef[2]))^(delayCoef[3]*(gender=="M")+delayCoef[4]*(gender=="F")+delayCoef[5]*age)
 }
+IVec <- Vectorize(I)
 
 ##adjudication
 tmax=8
 nstep=100
+nstepSmall=10
 rk4 <- function(df, a, b, f0, n) {
   
   h = (b-a)/n
@@ -116,6 +118,7 @@ disabCoef <- c(0.02276197,-8.65900843,-7.46187930,0.30431135)
 disabMu <- function(age0,gender,time){
   return( exp(disabCoef %*% c(age0+time,(gender=="F"),(gender=="M"),time0)) )
 }
+disabMuVec <- Vectorize(disabMu)
 
 reacCoef <- c(-0.01217323,0.75640213,0.33436334,-0.12466354,-1.04464466)
 reacMu <- function(age0,gender,time,duration0){
@@ -132,6 +135,7 @@ activeDeadCoef <- c(0.09,-9.8,-9.5)
 activeDeadMu <- function(age0,gender,time){
   return(exp(activeDeadCoef %*% c(age0+time,(gender=="F"),(gender=="M"))))
 }
+activeDeadMuVec <- Vectorize(activeDeadMu)
 
 reacDeadMu <- function(age0,gender,time){
   return(activeDeadMu(age0,gender,time))
@@ -146,6 +150,8 @@ epsilon <- 10^(-7)
 
 
 ##reserve functions
+
+#transition probabilites when starting in disabled or reactivated
 diffValidTimeModel = function(t, x, mu12, mu14, mu23, mu24, mu34) {
   d1 = -x[1]*(mu12(t)+mu14(t))
   d2 = -x[2]*(mu23(t)+mu24(t))+x[1]*mu12(t)
@@ -154,40 +160,42 @@ diffValidTimeModel = function(t, x, mu12, mu14, mu23, mu24, mu34) {
   return( c(d1, d2, d3, d4) )
 }
 
-probFromDisabOrReac <- function(y0,fromTime,toTime,toState,age0,gender,duration0){
+probFromDisabOrReac <- function(y0,fromTime,toTime,toState,age0,gender,duration0, steps){
   mu12 <- function(t){disabMu(age0,gender,t)}
   mu14 <- function(t){activeDeadMu(age0,gender,t)}
   mu23 <- function(t){reacMu(age0,gender,t,duration0)}
   mu24 <- function(t){disabDeadMu(age0,gender,t,duration0)}
   mu34 <- function(t){reacDeadMu(age0,gender,t)}
   
-  distrib <- rk4(function(t, x) diffValidTimeModel(t, x, mu12=mu12, mu14=mu14, mu23=mu23, mu24=mu24, mu34=mu34), a=fromTime, b=toTime, f0=y0, nstep)
+  distrib <- rk4(function(t, x) diffValidTimeModel(t, x, mu12=mu12, mu14=mu14, mu23=mu23, mu24=mu24, mu34=mu34), a=fromTime, b=toTime, f0=y0, steps)
   return(distrib[toState])
 } 
 
+#valid time disability reserve at time Gt given no death before tNoDeath
 diffThieleViGt <- function(t,x,age0,mu23,mu24){
   d1 = (r+mu23(t)+mu24(t))*x[1]-(age0+t <= ageRetire)
   return(c(d1))
 }
-  
-thieleViGt <- function(age0,gender,duration0,tNoDeath){
+
+thieleViGt <- function(age0,gender,duration0,tNoDeath,steps){
   mu23 <- function(t){
-    factor <- ifelse(t >= tNoDeath,1,(1-probFromDisabOrReac(c(0,0,1,0),t,tNoDeath,4,age0,gender,0))/(1-probFromDisabOrReac(c(0,1,0,0),t,tNoDeath,4,age0,gender,duration0)) )
+    factor <- ifelse(t >= tNoDeath,1,(1-probFromDisabOrReac(c(0,0,1,0),t,tNoDeath,4,age0,gender,0,nstep))/(1-probFromDisabOrReac(c(0,1,0,0),t,tNoDeath,4,age0,gender,duration0,nstep)) )
     reacMu(age0,gender,t,duration0)*factor
-    } 
+  } 
   mu24 <- function(t){
     factor <- ifelse(t >= tNoDeath,1, 0)
     disabDeadMu(age0,gender,t,duration0)*factor
-    } 
+  } 
   fromTime <- ageRetire-age0
   
-  V <- rk4(function(t, x) diffThieleViGt(t, x, age0=age0, mu23=mu23, mu24=mu24), a=fromTime, b=0+epsilon, f0=0, nstep)
+  V <- rk4(function(t, x) diffThieleViGt(t, x, age0=age0, mu23=mu23, mu24=mu24), a=fromTime, b=0+epsilon, f0=0, steps)
   return(V[1])
 } 
+thieleViGtVec <- Vectorize(thieleViGt)
 
-
+#valid time active reserve at time t
 diffThieleVa <- function(t,x,age0,gender,mu12,mu14){
-  d1 = (r+mu12(t)+mu14(t))*x[1]-ifelse(t<=coveragePeriod,mu12(t)*thieleViGt(age0+t,gender,0,0),0)
+  d1 = (r+mu12(t)+mu14(t))*x[1]-ifelse(t<=coveragePeriod,mu12(t)*thieleViGt(age0+t,gender,0,0,nstep),0)
   return(c(d1))
 }
 
@@ -200,6 +208,7 @@ thieleVa <- function(age0,gender){
   return(V[1])
 } 
 
+#CBNR reserve
 activeDeadMuInt <- function(age0,gender,time){
   num <- activeDeadMu(age0,gender,time) 
   denom <- activeDeadCoef[1]
@@ -218,11 +227,7 @@ paa <- function(age0,gender,time){
   return( exp(-(disabTerm+activeDeadTerm)) )
 }
 paaVec <- Vectorize(paa)
- 
-activeDeadMuVec <- Vectorize(activeDeadMu)
-disabMuVec <- Vectorize(disabMu)
-IVec <- Vectorize(I)
-paaVec <- Vectorize(paa)
+
 pCBNR <- function(age0,gender){
   beforeTerm <- integrate(f = function(time){IVec(time,0,gender,age0+time)*paaVec(age0-time0,gender,time0+time)*disabMuVec(age0-time0,gender,time0+time)}, lower=-time0,upper=0)$value
   afterTerm <- integrate(f = function(time){paaVec(age0-time0,gender,time0+time)*disabMuVec(age0-time0,gender,time0+time)}, lower=0,upper=Inf)$value
@@ -236,14 +241,45 @@ VaCBNRFactor <- function(age0,gender){
   return(1-integ)
 }
 
-thieleViGtVec <- Vectorize(thieleViGt)
 ViCBNRTerm <- function(age0,gender){
-  integ <- 1/(pCBNR(age0,gender))*integrate(f = function(time){exp(r*(-time))*thieleViGtVec(age0+time,gender,0,-time)*IVec(time,0,gender,age0+time)*disabMuVec(age0-time0,gender,time0+time)*paaVec(age0-time0,gender,time0+time)}, lower=-time0,upper=0)$value
+  integ <- 1/(pCBNR(age0,gender))*integrate(f = function(time){exp(r*(-time))*thieleViGtVec(age0+time,gender,0,-time,nstep)*IVec(time,0,gender,age0+time)*disabMuVec(age0-time0,gender,time0+time)*paaVec(age0-time0,gender,time0+time)}, lower=-time0,upper=0)$value
   return(integ)
 }
 
-##CBNR reserve (those who have never reported a disability)
 
+#valid time active reserve at time Gt given no death before tNoDeath
+pAFunc <- function(age0,gender,time,tNoDeath){
+  paa(age0,gender,time)*(activeDeadMu(age0,gender,time)+disabMu(age0,gender,time)*probFromDisabOrReac(c(0,1,0,0),time,tNoDeath,4,age0,gender,0,nstep) )
+}
+pAFuncVec <- Vectorize(pAFunc)
+
+pA <- function(tNoDeath,age0,gender){
+  probDie <- integrate(f = function(time){pAFuncVec(age0,gender,time,tNoDeath)}, lower=0,upper=tNoDeath, subdivisions=10L, rel.tol=0.01)$value
+  return(1-probDie)
+}
+
+diffThieleVaGt <- function(t,x,age0,gender,mu12,mu14,tNoDeath){
+  d1 = (r+mu12(t)+mu14(t))*x[1]-ifelse(t<=coveragePeriod,mu12(t)*thieleViGt(age0+t,gender,0,tNoDeath,nstepSmall),0)
+  return(c(d1))
+}
+
+thieleVaGt <- function(age0,gender,tNoDeath){
+  mu12 <- function(t){
+    factor <- ifelse(t >= tNoDeath,1, (1-probFromDisabOrReac(c(0,1,0,0),t,tNoDeath,4,age0,gender,0,nstepSmall))/pA(tNoDeath,age0,gender) )
+    disabMu(age0,gender,t)*factor
+    } 
+  mu14 <- function(t){
+    factor <- ifelse(t >= tNoDeath,1,0)
+    activeDeadMu(age0,gender,t)*factor
+    } 
+  fromTime <- min(coveragePeriod,ageRetire-age0)
+  
+  V <- rk4(function(t, x) diffThieleVaGt(t, x, age0=age0, gender=gender, mu12=mu12, mu14=mu14, tNoDeath), a=fromTime, b=0+epsilon, f0=0, nstepSmall)
+  return(V[1])
+} 
+
+
+##CBNR reserve (those who have never reported a disability)
 CBNRdf <- CBNRdfOrig 
 
 CBNRdf <- CBNRdf %>%
@@ -256,7 +292,7 @@ CBNRdf <- CBNRdf %>%
 sum(CBNRdf$VCBNRVaTerm+CBNRdf$VCBNRViTerm) #8.32
 sum(CBNRdf$VCBNRNaive) #7.73
 
-##RBNSi reserve (those who have reported a disability, but have not recieved any benefits yet)
+##RBNSi reserve (those who have reported a disability, but have not received any benefits yet)
 RBNSidf <- RBNSidfOrig %>% 
   mutate(tMinusGt = durDisab,
          ageGt = age-tMinusGt,
@@ -268,20 +304,20 @@ RBNSidf <- RBNSidfOrig %>%
 
 RBNSidf <- RBNSidf %>%
   rowwise() %>%
-  mutate(VRBNSi = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt)*awardProb,
+  mutate(VRBNSiVaTerm = exp(tMinusGt*r)*ifelse(ageGt < 67,thieleVaGt(ageGt,gender,tMinusGt)*(1-awardProb),0),
+         VRBNSiViTerm = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
          VRBNSiNaive = ifelse(age < 67,thieleVa(age,gender),0)  ) %>% 
   ungroup()
 
-
-sum(RBNSidf$VRBNSi) #501.69
-sum(RBNSidf$VRBNSiNaive) #5.23
+sum(RBNSidf$VRBNSiVaTerm+RBNSidf$VRBNSiViTerm) #502.44
+sum(RBNSidf$VRBNSiNaive) #6.23
 
 ##RBNSr reserve (those currently receiving running payments or have been reactivated)
 
 RBNSrdf <- RBNSrdfOrig %>% 
   mutate(tMinusGt = ifelse(is.na(durReac),0,durReac),
-                              ageGt = age-tMinusGt,
-                              Wt = durDisab-tMinusGt) %>%
+         ageGt = age-tMinusGt,
+         Wt = durDisab-tMinusGt) %>%
   rowwise() %>%
   mutate(awardProb = absProbReac(adjStateReac(adjState),ageGt,gender,durDisab,durReac)) %>%
   ungroup() %>%
@@ -289,8 +325,8 @@ RBNSrdf <- RBNSrdfOrig %>%
 
 RBNSrdf <- RBNSrdf %>%
   rowwise() %>%
-  mutate(VRBNSr = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt)*awardProb,
-         VRBNSrNaive =thieleViGt(age,gender,durDisab,0)*ifelse(awardProb < 1,0,1) ) %>%
+  mutate(VRBNSr = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
+         VRBNSrNaive =thieleViGt(age,gender,durDisab,0,nstep)*ifelse(awardProb < 1,0,1) ) %>%
   ungroup()
 
 sum(RBNSrdf$VRBNSr) #961.68
@@ -311,7 +347,7 @@ CBNRdfFull <- LECDK19df$disab %>% filter(is.na(durDisab))
 
 CBNRAvg <- sum(CBNRdf$VCBNRVaTerm+CBNRdf$VCBNRViTerm)/n 
 CBNRNaiveAvg <- sum(CBNRdf$VCBNRNaive)/n
-RBNSiAvg <- sum(RBNSidf$VRBNSi)/n
+RBNSiAvg <- sum(RBNSidf$VRBNSiViTerm+RBNSidf$VRBNSiVaTerm)/n
 RBNSiNaiveAvg <- sum(RBNSidf$VRBNSiNaive)/n
 RBNSrAvg <- sum(RBNSrdf$VRBNSr)/n 
 RBNSrNaiveAvg <- sum(RBNSrdf$VRBNSrNaive)/n
