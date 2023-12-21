@@ -230,10 +230,10 @@ paaVec <- Vectorize(paa)
 
 pCBNR <- function(age0,gender){
   beforeTerm <- integrate(f = function(time){IVec(time,0,gender,age0+time)*paaVec(age0-time0,gender,time0+time)*disabMuVec(age0-time0,gender,time0+time)}, lower=-time0,upper=0)$value
-  afterTerm <- integrate(f = function(time){paaVec(age0-time0,gender,time0+time)*disabMuVec(age0-time0,gender,time0+time)}, lower=0,upper=Inf)$value
-  infTerm <- integrate(f = function(time){paaVec(age0-time0,gender,time0+time)*activeDeadMuVec(age0-time0,gender,time0+time)}, lower=0,upper=1000)$value
-  
-  return(beforeTerm+afterTerm+infTerm)
+  afterTerm <- integrate(f = function(time){paaVec(age0-time0,gender,time0+time)*disabMuVec(age0-time0,gender,time0+time)}, lower=0,upper=1000)$value
+  infTerm <- integrate(f = function(time){paaVec(age0,gender,time)*disabMuVec(age0-time0,gender,time0+time)}, lower=0,upper=1000)$value
+
+  return(afterTerm/infTerm+beforeTerm) #NB: one can show that afterTerm/infTerm = paa(age0-time0,gender,time0) analytically in this case since I(s,t)=1 for s \geq t, but we don't exploit this here since this is closer to the general result from the theorem and P(CBNR) does not have to be calculated that often
 }
 
 VaCBNRFactor <- function(age0,gender){
