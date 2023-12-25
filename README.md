@@ -2,7 +2,7 @@
 
 ## Introduction
 This repository contains code and output to reproduce results in the paper [A multistate approach to disability insurance
-reserving with information delays]() by Oliver Lunding Sandqvist. 
+reserving with information delays](https://arxiv.org/abs/2312.14324) by Oliver Lunding Sandqvist. 
 
 ## Code structure
 
