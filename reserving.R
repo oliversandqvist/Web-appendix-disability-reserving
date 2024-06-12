@@ -28,7 +28,7 @@ CBNRdfOrig <- CBNRdfOrig[sample(1:nrow(CBNRdfOrig),n),]
 delayCoef <- c(2.2253524712,1.0531730783,0.3556644822,0.1132067522,0.0008557776)
 
 I <- function(s,t,gender,age){
-  1-(1-exp(-(delayCoef[1]*(t-s))^delayCoef[2]))^(delayCoef[3]*(gender=="M")+delayCoef[4]*(gender=="F")+delayCoef[5]*age)
+  1-(1-exp(-(delayCoef[1]*(t-s))^delayCoef[2]))^(exp(delayCoef[3]*(gender=="M")+delayCoef[4]*(gender=="F")+delayCoef[5]*age))
 }
 IVec <- Vectorize(I)
 
@@ -77,12 +77,22 @@ reacReapplyCoef <- c(6.838564e-05,-5.328340e-02,-2.082540e-01,-1.245490e+00,2.05
 reacAwardCoef <- c(0.01546058,0.77122201,1.29111478,-0.48998518,-0.19835554 )
 reacDeadIBNRCoef <- c(0.02319754,-21.09900823,-5.94234612,0.14767608,-0.46433496)
 
+adjReacHazard <- function(type,age,gender,durReac,durDisab){
+  if(type=="reject"){coef <- reacRejectCoef}
+  else if(type=="reapply"){coef <- reacReapplyCoef}
+  else if(type=="award"){coef <- reacAwardCoef}
+  else if(type=="dead"){coef <- reacDeadIBNRCoef}
+  else{stop("wrong type")}
+  
+  exp(coef %*% c(age,(gender=="F"),(gender=="M"),durReac,durDisab))
+}
+
 absProbReac <- function(y0,age0,gender,durDisab0,durReac0){
-  mu12 <- function(t){exp(reacRejectCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReac0+t,durDisab0+t))}
-  mu21 <- function(t){exp(reacReapplyCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReac0+t,durDisab0+t))}
-  mu13 <- function(t){exp(reacAwardCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReac0+t,durDisab0+t))}
+  mu12 <- function(t){adjReacHazard("reject",age0+t,gender,durReac0+t,durDisab0+t)}
+  mu21 <- function(t){adjReacHazard("reapply",age0+t,gender,durReac0+t,durDisab0+t)}
+  mu13 <- function(t){adjReacHazard("award",age0+t,gender,durReac0+t,durDisab0+t)}
   mu14 <- function(t){0}
-  mu24 <- function(t){exp(reacDeadIBNRCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReac0+t,durDisab0+t))}
+  mu24 <- function(t){adjReacHazard("dead",age0+t,gender,durReac0+t,durDisab0+t)}
   
   distrib <- rk4(function(t, x) diffAdjReac(t, x, mu12=mu12, mu21=mu21, mu13=mu13, mu14=mu14, mu24=mu24), a=0, b=tmax, f0=y0, nstep)
   return(distrib[3])
@@ -94,14 +104,25 @@ disabRejecCoef <- c(-0.004817674,-0.806449160,-0.799717698,-0.249845173,0.077125
 disabReapplyCoef<- c(0.002596526,1.084541659,1.159223225,-0.090002484,-0.255215380)
 deadRBNSCoef <- c(0.01270125,-5.28526166,-4.84594645,-0.53219385,0.16933611,-14.67544111)
 
+
+adjDisabHazard <- function(type,rejectBefore,age,gender,durReport,durDisab){
+  if(type=="award"){coef <- disabAwardCoef}
+  else if(type=="reject"){coef <- disabRejecCoef}
+  else if(type=="dead"){coef <- deadRBNSCoef}
+  else if(type=="reapply"){coef <- c(disabReapplyCoef,0)}
+  else{stop("wrong type")}
+  
+  exp(coef %*% c(age,(gender=="F"),(gender=="M"),durReport,durDisab,rejectBefore))
+}
+
 absProbDisab <- function(y0,age0,gender,durDisab0,durReport0){
-  mu13 <- function(t){exp(disabAwardCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t,0))}
-  mu12 <- function(t){exp(disabRejecCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t,0))}
-  mu24 <- function(t){exp(disabReapplyCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t))}
-  mu42 <- function(t){exp(disabRejecCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t,1))}
-  mu43 <- function(t){exp(disabAwardCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t,1))} 
-  mu15 <- function(t){exp(deadRBNSCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t,0))}
-  mu45 <-function(t){exp(deadRBNSCoef %*% c(age0+t,(gender=="F"),(gender=="M"),durReport0+t,durDisab0+t,1))}
+  mu13 <- function(t){adjDisabHazard("award",0,age0+t,gender,durReport0+t,durDisab0+t)}
+  mu12 <- function(t){adjDisabHazard("reject",0,age0+t,gender,durReport0+t,durDisab0+t)}
+  mu24 <- function(t){adjDisabHazard("reapply",1,age0+t,gender,durReport0+t,durDisab0+t)}
+  mu42 <- function(t){adjDisabHazard("reject",1,age0+t,gender,durReport0+t,durDisab0+t)}
+  mu43 <- function(t){adjDisabHazard("award",1,age0+t,gender,durReport0+t,durDisab0+t)} 
+  mu15 <- function(t){adjDisabHazard("dead",0,age0+t,gender,durReport0+t,durDisab0+t)}
+  mu45 <-function(t){adjDisabHazard("dead",1,age0+t,gender,durReport0+t,durDisab0+t)}
   mu25 <- function(t){0}
   
   distrib <- rk4(function(t, x) diffAdjDisab(t, x, mu13=mu13, mu12=mu12, mu24=mu24, mu42=mu42, mu43=mu43, mu15=mu15, mu45=mu45, mu25=mu25), a=0, b=tmax, f0=y0, nstep)
@@ -194,21 +215,21 @@ thieleViGt <- function(age0,gender,duration0,tNoDeath,steps){
 thieleViGtVec <- Vectorize(thieleViGt)
 
 #valid time active reserve at time t
-diffThieleVa <- function(t,x,age0,gender,mu12,mu14){
+diffThieleVa <- function(t,x,age0,gender,coveragePeriod,mu12,mu14){
   d1 = (r+mu12(t)+mu14(t))*x[1]-ifelse(t<=coveragePeriod,mu12(t)*thieleViGt(age0+t,gender,0,0,nstep),0)
   return(c(d1))
 }
 
-thieleVa <- function(age0,gender){
+thieleVa <- function(age0,gender,coveragePeriod){
   mu12 <- function(t){disabMu(age0,gender,t)} 
   mu14 <- function(t){activeDeadMu(age0,gender,t)} 
   fromTime <- min(coveragePeriod,ageRetire-age0)
   
-  V <- rk4(function(t, x) diffThieleVa(t, x, age0=age0, gender=gender, mu12=mu12, mu14=mu14), a=fromTime, b=0+epsilon, f0=0, nstep)
+  V <- rk4(function(t, x) diffThieleVa(t, x, age0=age0, gender=gender, coveragePeriod=coveragePeriod, mu12=mu12, mu14=mu14), a=fromTime, b=0+epsilon, f0=0, nstep)
   return(V[1])
 } 
 
-#CBNR reserve
+#CBNR reserve functions
 activeDeadMuInt <- function(age0,gender,time){
   num <- activeDeadMu(age0,gender,time) 
   denom <- activeDeadCoef[1]
@@ -258,12 +279,12 @@ pA <- function(tNoDeath,age0,gender){
   return(1-probDie)
 }
 
-diffThieleVaGt <- function(t,x,age0,gender,mu12,mu14,tNoDeath){
+diffThieleVaGt <- function(t,x,age0,gender,coveragePeriod,mu12,mu14,tNoDeath){
   d1 = (r+mu12(t)+mu14(t))*x[1]-ifelse(t<=coveragePeriod,mu12(t)*thieleViGt(age0+t,gender,0,tNoDeath,nstepSmall),0)
   return(c(d1))
 }
 
-thieleVaGt <- function(age0,gender,tNoDeath){
+thieleVaGt <- function(age0,gender,coveragePeriod,tNoDeath){
   mu12 <- function(t){
     factor <- ifelse(t >= tNoDeath,1, (1-probFromDisabOrReac(c(0,1,0,0),t,tNoDeath,4,age0,gender,0,nstepSmall))/pA(tNoDeath,age0,gender) )
     disabMu(age0,gender,t)*factor
@@ -274,7 +295,7 @@ thieleVaGt <- function(age0,gender,tNoDeath){
     } 
   fromTime <- min(coveragePeriod,ageRetire-age0)
   
-  V <- rk4(function(t, x) diffThieleVaGt(t, x, age0=age0, gender=gender, mu12=mu12, mu14=mu14, tNoDeath), a=fromTime, b=0+epsilon, f0=0, nstepSmall)
+  V <- rk4(function(t, x) diffThieleVaGt(t, x, age0=age0, gender=gender, coveragePeriod=coveragePeriod, mu12=mu12, mu14=mu14, tNoDeath), a=fromTime, b=0+epsilon, f0=0, nstepSmall)
   return(V[1])
 } 
 
@@ -282,15 +303,20 @@ thieleVaGt <- function(age0,gender,tNoDeath){
 ##CBNR reserve (those who have never reported a disability)
 CBNRdf <- CBNRdfOrig 
 
+meanDelayTrunc <- mean(LECDK19$delay %>% filter(repDelayMax > 2) %>% select(repDelayDisab) %>% unlist())
+
 CBNRdf <- CBNRdf %>%
   rowwise() %>%
-  mutate(VCBNRVaTerm = ifelse(age < 67,thieleVa(age,gender),0)*VaCBNRFactor(age,gender),
+  mutate(VCBNRVaTerm = ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0)*VaCBNRFactor(age,gender),
          VCBNRViTerm = ViCBNRTerm(age,gender),
-         VCBNRNaive = ifelse(age < 67,thieleVa(age,gender),0)  ) %>% 
+         VCBNRSimple = ifelse(age < 67,thieleVa(age,gender,coveragePeriod+meanDelayTrunc),0),
+         VCBNRNaive =  ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0) ) %>%
   ungroup()
 
-sum(CBNRdf$VCBNRVaTerm+CBNRdf$VCBNRViTerm) #8.32
+sum(CBNRdf$VCBNRVaTerm+CBNRdf$VCBNRViTerm) #9.29
+sum(CBNRdf$VCBNRSimple) #8.98 
 sum(CBNRdf$VCBNRNaive) #7.73
+
 
 ##RBNSi reserve (those who have reported a disability, but have not received any benefits yet)
 RBNSidf <- RBNSidfOrig %>% 
@@ -304,12 +330,14 @@ RBNSidf <- RBNSidfOrig %>%
 
 RBNSidf <- RBNSidf %>%
   rowwise() %>%
-  mutate(VRBNSiVaTerm = exp(tMinusGt*r)*ifelse(ageGt < 67,thieleVaGt(ageGt,gender,tMinusGt)*(1-awardProb),0),
+  mutate(VRBNSiVaTerm = exp(tMinusGt*r)*ifelse(ageGt < 67,thieleVaGt(ageGt,gender,coveragePeriod,tMinusGt)*(1-awardProb),0),
          VRBNSiViTerm = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
-         VRBNSiNaive = ifelse(age < 67,thieleVa(age,gender),0)  ) %>% 
+         VRBNSiSimple = thieleViGt(age,gender,0,0,nstep),
+         VRBNSiNaive = ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0)  ) %>% 
   ungroup()
 
 sum(RBNSidf$VRBNSiVaTerm+RBNSidf$VRBNSiViTerm) #502.44
+sum(RBNSidf$VRBNSiSimple) #481.2036
 sum(RBNSidf$VRBNSiNaive) #6.23
 
 ##RBNSr reserve (those currently receiving running payments or have been reactivated)
@@ -325,11 +353,15 @@ RBNSrdf <- RBNSrdfOrig %>%
 
 RBNSrdf <- RBNSrdf %>%
   rowwise() %>%
-  mutate(VRBNSr = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
-         VRBNSrNaive =thieleViGt(age,gender,durDisab,0,nstep)*ifelse(awardProb < 1,0,1) ) %>%
+  mutate(exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
+         VRBNSrSimple = ifelse(awardProb < 1, 
+                               ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0),
+                               thieleViGt(age,gender,durDisab,0,nstep)),
+         thieleViGt(age,gender,durDisab,0,nstep)*ifelse(awardProb < 1,0,1) ) %>%
   ungroup()
 
 sum(RBNSrdf$VRBNSr) #961.68
+sum(RBNSrdf$VRBNSrSimple) #945.66
 sum(RBNSrdf$VRBNSrNaive) #945.35
 
 ##save results:
@@ -346,24 +378,34 @@ RBNSidfFull <- LECDK19df$disab %>% filter(!is.na(durDisab) & adjState != 3)
 CBNRdfFull <- LECDK19df$disab %>% filter(is.na(durDisab)) 
 
 CBNRAvg <- sum(CBNRdf$VCBNRVaTerm+CBNRdf$VCBNRViTerm)/n 
+CBNRSimpleAvg <- sum(CBNRdf$VCBNRSimple)/n
 CBNRNaiveAvg <- sum(CBNRdf$VCBNRNaive)/n
 RBNSiAvg <- sum(RBNSidf$VRBNSiViTerm+RBNSidf$VRBNSiVaTerm)/n
+RBNSiSimpleAvg <- sum(RBNSidf$VRBNSiSimple)/n
 RBNSiNaiveAvg <- sum(RBNSidf$VRBNSiNaive)/n
 RBNSrAvg <- sum(RBNSrdf$VRBNSr)/n 
+RBNSrSimpleAvg <- sum(RBNSrdf$VRBNSrSimple)/n
 RBNSrNaiveAvg <- sum(RBNSrdf$VRBNSrNaive)/n
 
 nCBNR <- nrow(CBNRdfFull)
 nRBNSi <- nrow(RBNSidfFull)
 nRBNSr <- nrow(RBNSrdfFull)
 
-dfPortfolio <- data.frame(Reserve = c(CBNRAvg*nCBNR,CBNRNaiveAvg*nCBNR,RBNSiAvg*nRBNSi,RBNSiNaiveAvg*nRBNSi,RBNSrAvg*nRBNSr,RBNSrNaiveAvg*nRBNSr) 
-                          ,Method = c("Proposed","Naive","Proposed","Naive","Proposed","Naive") 
-                          ,Category =c("CBNR","CBNR","RBNSi","RBNSi","RBNSr","RBNSr") )
+dfPortfolio <- data.frame(Reserve = c(CBNRAvg*nCBNR,CBNRSimpleAvg*nCBNR,CBNRNaiveAvg*nCBNR,
+                                      RBNSiAvg*nRBNSi,RBNSiSimpleAvg*nRBNSi,RBNSiNaiveAvg*nRBNSi,
+                                      RBNSrAvg*nRBNSr,RBNSrSimpleAvg*nRBNSr,RBNSrNaiveAvg*nRBNSr) 
+                          ,Method = c("Proposed","Simple","Naive",
+                                      "Proposed","Simple","Naive",
+                                      "Proposed","Simple","Naive") 
+                          ,Category =c("CBNR","CBNR","CBNR",
+                                       "RBNSi","RBNSi","RBNSi",
+                                       "RBNSr","RBNSr","RBNSr") )
 
 
-png("Figures/Barchart.png", width = 4.5, height = 4, units = 'in', res = 500) 
+png("Figures/Barchart.png", width = 5.5, height = 4, units = 'in', res = 500) 
 
-ggplot(dfPortfolio, aes(x = Method, y = Reserve, fill = Category, label = round(Reserve,0) )) +
+ggplot(dfPortfolio, aes(x = factor(Method,levels=c("Naive","Simple","Proposed") ), y = Reserve, fill = Category, label = round(Reserve,0) )) +
+  xlab("Method") +
   geom_bar(stat = "identity") +
   geom_text(size = 4.5, position = position_stack(vjust = 0.5),color="white") +
   theme_bw() +
