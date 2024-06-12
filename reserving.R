@@ -353,11 +353,11 @@ RBNSrdf <- RBNSrdfOrig %>%
 
 RBNSrdf <- RBNSrdf %>%
   rowwise() %>%
-  mutate(exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
+  mutate(VRBNSr = exp(tMinusGt*r)*thieleViGt(ageGt,gender,Wt,tMinusGt,nstep)*awardProb,
          VRBNSrSimple = ifelse(awardProb < 1, 
                                ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0),
                                thieleViGt(age,gender,durDisab,0,nstep)),
-         thieleViGt(age,gender,durDisab,0,nstep)*ifelse(awardProb < 1,0,1) ) %>%
+         VRBNSrNaive = thieleViGt(age,gender,durDisab,0,nstep)*ifelse(awardProb < 1,0,1) ) %>%
   ungroup()
 
 sum(RBNSrdf$VRBNSr) #961.68
