@@ -310,11 +310,13 @@ CBNRdf <- CBNRdf %>%
   mutate(VCBNRVaTerm = ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0)*VaCBNRFactor(age,gender),
          VCBNRViTerm = ViCBNRTerm(age,gender),
          VCBNRSimple = ifelse(age < 67,thieleVa(age,gender,coveragePeriod+meanDelayTrunc),0),
+         VCBNRSimple2 = VCBNRNaive + disabMu(age,gender,-meanDelayTrunc)*thieleViGtVec(age-meanDelayTrunc,gender,0,0,nstep)*meanDelayTrunc,
          VCBNRNaive =  ifelse(age < 67,thieleVa(age,gender,coveragePeriod),0) ) %>%
   ungroup()
 
 sum(CBNRdf$VCBNRVaTerm+CBNRdf$VCBNRViTerm) #9.29
 sum(CBNRdf$VCBNRSimple) #8.98 
+sum(CBNRdf$VCBNRSimple2) #9.22 
 sum(CBNRdf$VCBNRNaive) #7.73
 
 
